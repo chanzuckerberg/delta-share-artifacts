@@ -1,0 +1,49 @@
+on:
+  push:
+    tags:
+      - '*'
+
+env:
+  SOURCE_REPO: delta-share
+
+name: release
+jobs:
+  release-artifacts:
+    runs-on: [ARM64, self-hosted, Linux]
+    steps:
+      # See https://docs.github.com/en/actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
+      # For why we need to generate a token and not use the default
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.CZI_RELEASE_PLEASE_APP_ID }}
+          private_key: ${{ secrets.CZI_RELEASE_PLEASE_PK }}
+
+      # clone the artifact repo
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          path: ${{ github.event.repository.name }}
+
+      # clone the source repo
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          repository: chanzuckerberg/${{ env.SOURCE_REPO }}
+          # we need to clone the source repo into a directory within the artifact repo so that goreleaser will build the source but use the tag from the artifact repo
+          path: ${{ github.event.repository.name }}/core/cli/${{ env.SOURCE_REPO }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ github.event.repository.name }}/core/cli/${{ env.SOURCE_REPO }}/core/go.mod
+          cache: true
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          version: latest
+          workdir: ${{ github.event.repository.name }}/core/cli/
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
